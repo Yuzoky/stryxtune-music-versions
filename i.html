@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<title>Installer Stryxtune Music</title>
+<!-- Stryxtune Music — page ouverte par le QR code (ou le lien) « Faire installer l'appli ».
+     Les versions sont publiées chiffrées ; la clé est dans le lien, après le « # » (elle n'est jamais envoyée
+     au site). La page télécharge la version chiffrée, la déchiffre dans le navigateur et la propose au téléchargement. -->
+<style>
+  html, body { margin: 0; min-height: 100%; background: #050507; color: #eee; font: 16px system-ui, 'Segoe UI', sans-serif; }
+  body { display: grid; place-items: center; min-height: 100vh; text-align: center; }
+  main { padding: 28px; max-width: 420px; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  .sous { color: #a3a3af; margin: 0 0 26px; }
+  button { display: block; width: 100%; padding: 15px; border: 0; border-radius: 14px; background: #fff; color: #000; font: 800 16px system-ui, sans-serif; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.second { background: #1c1c22; color: #eee; }
+  .aide { font-size: 13px; color: #8a8a95; margin: 8px 0 20px; }
+  .barre { height: 4px; border-radius: 4px; background: #222; overflow: hidden; margin: 14px 0 6px; display: none; }
+  .barre div { height: 100%; width: 0; background: #fff; transition: width .2s; }
+  #etat { font-size: 14px; color: #c9c9d2; min-height: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Stryxtune Music</h1>
+  <p class="sous" id="sous">Installe l’appli : ensuite elle se met à jour toute seule.</p>
+  <div id="choix">
+    <button id="android">📱 Appli Android</button>
+    <p class="aide">Ouvre le fichier téléchargé puis « Installer » (autorise ton navigateur à installer des applis si Android le demande).</p>
+    <button id="windows">💻 Appli Windows</button>
+    <p class="aide">Lance le fichier téléchargé. Si Windows prévient : « Informations complémentaires » puis « Exécuter quand même ».</p>
+  </div>
+  <div class="barre" id="barre"><div></div></div>
+  <div id="etat"></div>
+</main>
+<script>
+  const cle = (location.hash.match(/k=([0-9a-f]{64})/) || [])[1];
+  const $ = id => document.getElementById(id), etat = t => { $('etat').textContent = t; };
+  if (!cle) {
+    $('choix').hidden = true;
+    $('sous').textContent = 'Lien incomplet : scanne le QR code d’installation de quelqu’un qui a l’appli.';
+  }
+  // La plateforme de l'appareil passe en premier.
+  if (!/Android/i.test(navigator.userAgent)) { $('choix').append($('android'), $('android').nextElementSibling); $('android').className = 'second'; }
+  else $('windows').className = 'second';
+
+  async function installer(fichier, nom, type) {
+    document.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    const barre = $('barre'), plein = barre.firstElementChild;
+    barre.style.display = 'block';
+    try {
+      etat('Téléchargement…');
+      const r = await fetch(fichier + '?v=' + Date.now());
+      if (!r.ok) throw new Error('le site a répondu ' + r.status);
+      const total = +r.headers.get('content-length') || 0, morceaux = [], lecteur = r.body.getReader();
+      let recu = 0;
+      for (;;) {
+        const { done, value } = await lecteur.read();
+        if (done) break;
+        morceaux.push(value); recu += value.length;
+        if (total) plein.style.width = Math.round(recu / total * 100) + '%';
+        etat(`Téléchargement… ${(recu / 1e6).toFixed(1)} Mo${total ? ' / ' + (total / 1e6).toFixed(1) + ' Mo' : ''}`);
+      }
+      const donnees = new Uint8Array(recu);
+      let pos = 0; for (const m of morceaux) { donnees.set(m, pos); pos += m.length; }
+      etat('Préparation de l’appli…');
+      const octets = new Uint8Array(cle.match(/../g).map(h => parseInt(h, 16)));
+      const k = await crypto.subtle.importKey('raw', octets, 'AES-GCM', false, ['decrypt']);
+      const clair = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: donnees.subarray(0, 12) }, k, donnees.subarray(12));
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([clair], { type }));
+      a.download = nom;
+      document.body.append(a); a.click(); a.remove();
+      plein.style.width = '100%';
+      etat('C’est téléchargé ! Ouvre le fichier pour installer l’appli.');
+    } catch (e) {
+      etat('Impossible de préparer l’appli : ' + (e.name === 'OperationError' ? 'le lien n’est pas le bon.' : e.message));
+    }
+    document.querySelectorAll('button').forEach(b => { b.disabled = false; });
+  }
+  $('android').onclick = () => installer('stryxtune-android.bin', 'Stryxtune-Music.apk', 'application/vnd.android.package-archive');
+  $('windows').onclick = () => installer('stryxtune-pc.bin', 'Installer Stryxtune Music.exe', 'application/octet-stream');
+</script>
+</body>
+</html>
