@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Playlist partagée · Stryxtune Music</title>
+<!-- Stryxtune Music — page ouverte par un lien ou un QR code « Partager » d'une playlist.
+     Sur Android, elle ouvre l'appli qui importe la playlist ; sur PC, on colle le lien dans l'appli. -->
+<style>
+  :root { --fond: #050507; --carte: #121218; --bord: #24242e; --texte: #f2f2f5; --doux: #9a9aa8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: radial-gradient(120% 70% at 50% 0%, #1b1b26 0%, var(--fond) 60%); color: var(--texte);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display: flex; justify-content: center; padding: 36px 16px; }
+  main { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 14px; }
+  h1 { margin: 0; font-size: 26px; text-align: center; letter-spacing: -.02em; }
+  p { margin: 0; color: var(--doux); }
+  .centre { text-align: center; }
+  .carte { background: var(--carte); border: 1px solid var(--bord); border-radius: 20px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .carte h2 { margin: 0; font-size: 17px; }
+  .btn { display: flex; align-items: center; justify-content: center; min-height: 52px; border-radius: 999px; font-weight: 750; font-size: 17px; text-decoration: none; color: #000; background: #fff; border: 0; cursor: pointer; }
+  .btn.second { background: transparent; color: var(--texte); border: 1px solid var(--bord); }
+  .sons { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow: auto; }
+  .son { display: flex; gap: 10px; align-items: center; }
+  .son img { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; background: #222; }
+  .son span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+  .son small { color: var(--doux); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="titre">Playlist partagée</h1>
+  <p class="centre" id="info"></p>
+
+  <section class="carte" id="android">
+    <a class="btn" id="ouvrir" href="#">Ouvrir dans Stryxtune Music</a>
+    <p>L’appli s’ouvre et importe la playlist dans ta bibliothèque.</p>
+  </section>
+  <section class="carte" id="installer">
+    <h2>Pas encore l’appli ?</h2>
+    <p>Installe-la (Android ou PC Windows), puis rouvre ce lien.</p>
+    <a class="btn second" href="https://github.com/Yuzoky/stryxtune-music-versions/releases/latest">Télécharger Stryxtune Music</a>
+  </section>
+  <section class="carte" id="pc">
+    <h2>Sur PC</h2>
+    <p>Copie ce lien, puis dans Stryxtune Music : Bibliothèque → Importer une playlist → colle-le.</p>
+    <button class="btn second" id="copier">Copier le lien</button>
+  </section>
+  <section class="carte" id="apercu" hidden><h2>Les sons</h2><div class="sons" id="sons"></div></section>
+</main>
+<script>
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const donnees = location.hash.slice(1);
+  const p = new URLSearchParams(donnees);
+  const nom = p.get('n') || 'Playlist partagée';
+  const ids = (p.get('t') || '').split('.').filter(Boolean).map(x => parseInt(x, 36));
+  $('titre').textContent = nom;
+  $('info').textContent = ids.length ? `${ids.length} son${ids.length > 1 ? 's' : ''} partagé${ids.length > 1 ? 's' : ''} avec Stryxtune Music` : 'Ce lien est vide.';
+  document.title = nom + ' · Stryxtune Music';
+
+  const android = /android/i.test(navigator.userAgent);
+  if (!android) $('android').hidden = true;
+  else {
+    const retour = location.href.split('#')[0] + '#installer';
+    $('ouvrir').href = 'intent://playlist?' + donnees + '#Intent;scheme=stryxtune;package=com.stryxtune.music;S.browser_fallback_url=' + encodeURIComponent(retour) + ';end';
+  }
+  $('copier').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(location.href); $('copier').textContent = 'Lien copié ✓'; } catch { prompt('Copie ce lien :', location.href); }
+  });
+
+  // Aperçu des premiers sons (catalogue Deezer, JSONP).
+  let n = 0;
+  const deezer = chemin => new Promise((ok, ko) => {
+    const cb = 'dz' + (++n), s = document.createElement('script');
+    window[cb] = d => { delete window[cb]; s.remove(); ok(d); };
+    s.onerror = () => { delete window[cb]; s.remove(); ko(); };
+    s.src = `https://api.deezer.com/${chemin}?output=jsonp&callback=${cb}`;
+    document.head.appendChild(s);
+  });
+  Promise.all(ids.slice(0, 25).map(id => deezer('track/' + id).catch(() => null))).then(sons => {
+    const ok = sons.filter(t => t && t.id);
+    if (!ok.length) return;
+    $('sons').innerHTML = ok.map(t => `<div class="son"><img src="${esc(t.album && t.album.cover_small)}" alt=""><span>${esc(t.title)} <small>· ${esc(t.artist && t.artist.name)}</small></span></div>`).join('') + (ids.length > 25 ? `<p>… et ${ids.length - 25} autres</p>` : '');
+    $('apercu').hidden = false;
+  });
+</script>
+</body>
+</html>
